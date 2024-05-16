@@ -921,6 +921,7 @@ FW_VERSIONS = {
       b'\xf1\x00DNhe SCC F-CUP      1.00 1.02 99110-L5000         ',
       b'\xf1\x00DNhe SCC FHCUP      1.00 1.00 99110-L5000         ',
       b'\xf1\x00DNhe SCC FHCUP      1.00 1.02 99110-L5000         ',
+      b'\xf1\x00DN8_ RDR -----      1.00 1.00 99110-L1800         ',
     ],
     (Ecu.eps, 0x7d4, None): [
       b'\xf1\x00DN8 MDPS C 1.00 1.01 56310-L5000 4DNHC101',
@@ -935,6 +936,7 @@ FW_VERSIONS = {
       b'\xf1\x00DN8HMFC  AT USA LHD 1.00 1.05 99211-L1000 201109',
       b'\xf1\x00DN8HMFC  AT USA LHD 1.00 1.06 99211-L1000 210325',
       b'\xf1\x00DN8HMFC  AT USA LHD 1.00 1.07 99211-L1000 211223',
+      b'\xf1\x00DN8HMFC  AT USA LHD 1.00 1.01 99211-L1800 230512',
     ],
   },
   CAR.KIA_SORENTO: {
