@@ -2,7 +2,7 @@ from cereal import car
 from openpilot.common.conversions import Conversions as CV
 from openpilot.common.numpy_fast import clip
 from opendbc.can.packer import CANPacker
-from openpilot.selfdrive.car import DT_CTRL, apply_driver_steer_torque_limits, common_fault_avoidance, make_tester_present_msg
+from openpilot.selfdrive.car import DT_CTRL, apply_driver_steer_torque_limits, common_fault_avoidance
 from openpilot.selfdrive.car.hyundai import hyundaicanfd, hyundaican
 from openpilot.selfdrive.car.hyundai.hyundaicanfd import CanBus
 from openpilot.selfdrive.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CANFD_CAR, CAR
@@ -44,16 +44,19 @@ def process_hud_alert(enabled, fingerprint, hud_control):
 
 class CarController(CarControllerBase):
   def __init__(self, dbc_name, CP, VM):
-    super().__init__(dbc_name, CP, VM)
+    self.CP = CP
     self.CAN = CanBus(CP)
     self.params = CarControllerParams(CP)
     self.packer = CANPacker(dbc_name)
     self.angle_limit_counter = 0
+    self.frame = 0
 
     self.accel_last = 0
     self.apply_steer_last = 0
     self.car_fingerprint = CP.carFingerprint
     self.last_button_frame = 0
+    self.accel_raw = 0
+    self.accel_val = 0
 
   def update(self, CC, CS, now_nanos):
     actuators = CC.actuators
@@ -95,11 +98,11 @@ class CarController(CarControllerBase):
       addr, bus = 0x7d0, 0
       if self.CP.flags & HyundaiFlags.CANFD_HDA2.value:
         addr, bus = 0x730, self.CAN.ECAN
-      can_sends.append(make_tester_present_msg(addr, bus, suppress_response=True))
+      can_sends.append([addr, 0, b"\x02\x3E\x80\x00\x00\x00\x00\x00", bus])
 
       # for blinkers
       if self.CP.flags & HyundaiFlags.ENABLE_BLINKERS:
-        can_sends.append(make_tester_present_msg(0x7b1, self.CAN.ECAN, suppress_response=True))
+        can_sends.append([0x7b1, 0, b"\x02\x3E\x80\x00\x00\x00\x00\x00", self.CAN.ECAN])
 
     # CAN-FD platforms
     if self.CP.carFingerprint in CANFD_CAR:
@@ -143,10 +146,11 @@ class CarController(CarControllerBase):
 
       if self.frame % 2 == 0 and self.CP.openpilotLongitudinalControl:
         # TODO: unclear if this is needed
-        jerk = 3.0 if actuators.longControlState == LongCtrlState.pid else 1.0
+        jerk = 2.0 if actuators.longControlState == LongCtrlState.pid else 1.0
         use_fca = self.CP.flags & HyundaiFlags.USE_FCA.value
-        can_sends.extend(hyundaican.create_acc_commands(self.packer, CC.enabled, accel, jerk, int(self.frame / 2),
-                                                        hud_control, set_speed_in_units, stopping,
+        self.create_accel_value(CC, accel)
+        can_sends.extend(hyundaican.create_acc_commands(self.packer, CC.enabled, self.accel_raw, self.accel_val, jerk,
+                                                        int(self.frame / 2), hud_control, set_speed_in_units, stopping,
                                                         CC.cruiseControl.override, use_fca))
 
       # 20 Hz LFA MFA message
@@ -204,3 +208,15 @@ class CarController(CarControllerBase):
             self.last_button_frame = self.frame
 
     return can_sends
+
+  # We currently use static jerk limits for all accel commands, the PCM is very sensitive to how accels are being
+  # sent from the SCC source of truth. Dynamic jerk upper/lower limits are required to make PCM accept controls
+  # more smoothly
+  def create_accel_value(self, CC, accel):
+    rate = 0.1  # TODO: Dynamic jerk upper/lower limits should change this for more accurate and smoother controls
+    if not CC.enabled:
+      self.accel_raw, self.accel_val = 0, 0
+    else:
+      self.accel_raw = accel
+      self.accel_val = clip(self.accel_raw, self.accel_last - rate, self.accel_last + rate)
+    self.accel_last = self.accel_val
